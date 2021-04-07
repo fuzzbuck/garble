@@ -29,11 +29,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/fuzzbuck/garble/internal/literals"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/go/ast/astutil"
-
-	"mvdan.cc/garble/internal/literals"
 )
 
 var (
@@ -47,13 +46,15 @@ var (
 	flagGarbleTiny     bool
 	flagDebugDir       string
 	flagSeed           string
+	flagDir			   string
 )
 
 func init() {
 	flagSet.Usage = usage
 	flagSet.BoolVar(&flagGarbleLiterals, "literals", false, "Obfuscate literals such as strings")
 	flagSet.BoolVar(&flagGarbleTiny, "tiny", false, "Optimize for binary size, losing the ability to reverse the process")
-	flagSet.StringVar(&flagDebugDir, "debugdir", "", "Write the obfuscated source to a directory, e.g. -debugdir=out")
+	flagSet.StringVar(&flagDir, "dir", "", "Write the unchanged obfuscated source to a directory, e.g. -dir=out")
+	flagSet.StringVar(&flagDebugDir, "debugdir", "", "Write the source-mapped obfuscated source to a directory, e.g. -debugdir=debug")
 	flagSet.StringVar(&flagSeed, "seed", "", "Provide a base64-encoded seed, e.g. -seed=o9WDTZ4CN4w\nFor a random seed, provide -seed=random")
 }
 
@@ -521,6 +522,22 @@ func writeTemp(name string, content []byte) (string, error) {
 	return tempFile.Name(), nil
 }
 
+func writePerm(name string, content []byte) (string, error) {
+	f, err := os.CreateTemp(flagDir, name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	if _, err := f.Write(content); err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 func transformCompile(args []string) ([]string, error) {
 	var err error
 	flags, paths := splitFlagsFromFiles(args, ".go")
@@ -667,6 +684,9 @@ func transformCompile(args []string) ([]string, error) {
 		// 	fmt.Fprintf(os.Stderr, "\n-- %s/%s --\n%s", curPkg.ImportPath, origName, src)
 		// }
 
+		if flagDir != "" {
+			writePerm(name+".*.go", src)
+		}
 		if path, err := writeTemp(name+".*.go", src); err != nil {
 			return nil, err
 		} else {
